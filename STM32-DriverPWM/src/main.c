@@ -87,7 +87,7 @@ int main(void)
     // }
 
     int duty_cycle = 0;
-    int step = 10;
+    int step = 25;
 
     while (1)
     {
@@ -103,6 +103,7 @@ int main(void)
 
         for (volatile uint32_t i = 0; i < 20000; i++)
         {
+            // dummy loop
         }
     }
 }
