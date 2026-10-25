@@ -1,5 +1,20 @@
 #include "stm32f446xx.h"
 #include <stdint.h>
+#include <stdio.h>
+
+volatile uint32_t ms_ticks = 0;
+
+void SysTick_Handler(void)
+{
+    ms_ticks++;
+}
+
+void systick_init(void)
+{
+    SysTick->LOAD = (24000000 / 1000) - 1;
+    SysTick->VAL = 0;
+    SysTick->CTRL = (1 << 2) | (1 << 1) | (1 << 0);
+}
 
 void Clk_24Mhz(void)
 {
@@ -57,7 +72,6 @@ void reg_setting()
 }
 
 /*
-==========================================================
 Note :
 
 ADC : ADC value = (Vin / Vref) * 2^12
@@ -67,44 +81,125 @@ Mapping ADC wtih PWM : PWM = ( DC value * ARR) / ADC MAX
 F_PWM = Fclk (24 MHz) / (PSC + 1) * (ARR + 1)
 -> (PSC + 1) * (ARR + 1) = Fclk(24 MHz) / F_PWM(400 Hz)
 -> Def. PSC = 23 so; ARR = 2500 - 1 = 2499
-==========================================================
 */
+
+void serial_uart_init(uint32_t baudrate)
+{
+    RCC->APB1ENR |= (0x01 << 17);
+    RCC->AHB1ENR |= (0x01 << 0);
+
+    GPIOA->MODER = (GPIOA->MODER & ~((0x03 << 4) | (0x03 << 6))) | ((0x02 << 4) | (0x02 << 6));
+    GPIOA->AFR[0] = (GPIOA->AFR[0] & ~((0x0F << 8) | (0x0F << 12))) | ((0x07 << 8) | (0x07 << 12));
+
+    USART2->BRR = (24000000 + (baudrate / 2)) / baudrate;
+    USART2->CR1 = (0x01 << 13) | (0x01 << 3) | (0x01 << 2);
+}
+
+void uart_write(char ch)
+{
+    while (!(USART2->SR & (0x01 << 7)))
+        ;
+    USART2->DR = (ch & 0xFF);
+}
+
+void uart_print(const char *str)
+{
+    while (*str)
+    {
+        uart_write(*str++);
+    }
+}
 
 int main(void)
 {
     Clk_24Mhz();
     reg_setting();
+    serial_uart_init(9600);
+    systick_init();
 
-    // while (1)
-    // {
-    //     ADC1->CR2 |= (0x01 << 30); // Start conversion.
+    TIM2->EGR |= (0x01 << 0);
 
-    //     while (!(ADC1->SR & (0x01 << 1)));
+    float initial_setpoint = 23.0;
+    float T2 = 30.0;
 
-    //     uint32_t adc_val = ADC1->DR;
+    uint32_t last_stage_time = 0;
+    uint32_t last_temp_update = 0;
+    float current_pwm = 0;
+    float percent_pwm = 0;
+    float temp_step = 0.75f;
 
-    //     TIM2->CCR1 = (adc_val * 2499) / 4095;
-    // }
+    char uart_buf[100];
 
-    int duty_cycle = 0;
-    int step = 25;
+    uart_print("\r\n--- START FAN CONTROL SIMULATION ---\r\n");
+    sprintf(uart_buf, "Target Setpoint Initially Set to: %.0f C\r\n\n", initial_setpoint);
+    uart_print(uart_buf);
 
     while (1)
     {
-
-        TIM2->CCR1 = duty_cycle;
-
-        duty_cycle = duty_cycle + step;
-
-        if (duty_cycle >= 2499 || duty_cycle <= 0)
+        if ((ms_ticks - last_temp_update) >= 1000)
         {
-            step = -step;
+            T2 += temp_step;
+            if (T2 >= 32.0f || T2 <= 20.0f)
+            {
+                temp_step = -temp_step;
+            }
+            last_temp_update = ms_ticks;
+
+            sprintf(uart_buf, "[Temp] T2: %.1f C (T_Diff: %.1f)\r\n", T2, T2 - initial_setpoint);
+            uart_print(uart_buf);
         }
 
-        for (volatile uint32_t i = 0; i < 20000; i++)
+        float t_diff = T2 - initial_setpoint;
+
+        int target_pwm = 0;
+        int target_rpm = 0;
+
+        if (t_diff > 4.0f)
         {
-            // dummy loop
+            target_pwm = 2499;
+            target_rpm = 5000;
         }
+        else if (t_diff >= 3.0f)
+        {
+            target_pwm = 1999;
+            target_rpm = 4000;
+        }
+        else if (t_diff >= 2.0f)
+        {
+            target_pwm = 1499;
+            target_rpm = 3000;
+        }
+        else if (t_diff >= 1.0f)
+        {
+            target_pwm = 999;
+            target_rpm = 2000;
+        }
+        else if (t_diff > -1.0f)
+        {
+            target_pwm = 499;
+            target_rpm = 1000;
+        }
+        else
+        {
+            target_pwm = 0;
+            target_rpm = 0;
+        }
+
+        if (target_pwm != current_pwm)
+        {
+            if ((ms_ticks - last_stage_time) >= 15000)
+            {
+                current_pwm = target_pwm;
+                percent_pwm = (current_pwm / 2499) * 100;
+                TIM2->CCR1 = current_pwm;
+                last_stage_time = ms_ticks;
+
+                sprintf(uart_buf, ">>> [15s DELAY PASSED] FAN UPDATE: PWM = %.0f %% (%d RPM)\r\n\n", percent_pwm, target_rpm);
+                uart_print(uart_buf);
+            }
+        }
+
+        for (volatile uint32_t i = 0; i < 5000; i++)
+            ;
     }
 }
-
