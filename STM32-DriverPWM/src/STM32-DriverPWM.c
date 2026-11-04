@@ -12,19 +12,26 @@
 
 // Global Variables
 float T2 = 0.0f;
-bool Debug = true; // for Debug sim logic only not cal from temp sensor
+float r_sensor;
+float t_kelvin;
+
+bool Debug = false; // for Debug sim logic only not cal from temp sensor
 
 void input_temp_cal(void)
 {
     ADC1->CR2 |= (0x01 << 30);
-    while (!(ADC1->SR & (0x01 << 1)));
+    while (!(ADC1->SR & (0x01 << 1)))
+    {
+    }
 
     uint32_t adc_val = ADC1->DR;
 
     float v_adc = 3.3f * ((float)adc_val / 4095.0f);
-    float r_sensor = v_adc / 0.0001f;
 
-    float t_kelvin = 1.0f / ((1.0f / (15.0f + 273.15f)) + (1.0f / 3820.0f) * log(r_sensor / 2341.0f));
+    // Divider with R10K(Pull-Up)
+    r_sensor = 10000.0f * ((float)v_adc / (3.3f - (float)v_adc));
+
+    t_kelvin = 1.0f / ((1.0f / (15.0f + 273.15f)) + (1.0f / 3820.0f) * log(r_sensor / 2341.0f));
     T2 = t_kelvin - 273.15f;
 }
 
@@ -38,9 +45,16 @@ int main(void)
 
     TIM2->EGR |= (0x01 << 0);
 
-    float initial_setpoint = 23.0;
-    float temp_step = 0.75;
-    float T2 = 30.0; // comment this line if use sensor get temp
+    float initial_setpoint = 23.0; // set temp
+
+    float temp_step = 0.75; // Debug loop step
+    if (Debug)
+    {
+        T2 = 30.0; // comment this line if use sensor get temp
+    }
+    else
+    {
+    }
 
     uint32_t last_stage_time = 0;
     uint32_t last_temp_update = 0;
@@ -71,7 +85,7 @@ int main(void)
             }
             last_temp_update = ms_ticks;
 
-            sprintf(uart_buf, "[Temp] T2: %.3f C (T_Diff: %.3f)\r\n", T2, T2 - initial_setpoint);
+            sprintf(uart_buf, "[Temp] T2: %.3f C (T_Diff: %.3f) Resister = %.3f \r\n", T2, T2 - initial_setpoint, r_sensor);
             uart_print(uart_buf);
         }
 
