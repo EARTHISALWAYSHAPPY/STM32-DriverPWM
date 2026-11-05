@@ -1,0 +1,823 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NTC Thermistor Data Visualizer</title>
+    <!-- โหลดเฉพาะ Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            font-family: sans-serif;
+            padding: 20px;
+            background-color: #f9f9f9;
+        }
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border: 1px solid #ccc;
+        }
+        .controls {
+            margin: 20px 0;
+            padding: 15px;
+            background: #eee;
+            border: 1px solid #ddd;
+        }
+        input[type="range"] {
+            width: 100%;
+            margin: 10px 0;
+        }
+        .values {
+            font-size: 1.2em;
+            line-height: 1.5;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h2>NTC Thermistor Data (T2 vs Resistance)</h2>
+        
+        <div class="controls">
+            <label for="dataSlider"><strong>Scrub Data Point:</strong></label>
+            <input type="range" id="dataSlider" min="0" max="100" value="0">
+            
+            <div class="values">
+                Temperature (T2): <strong id="valTemp" style="color: red;">--</strong> °C <br>
+                Resistance (R): <strong id="valRes" style="color: blue;">--</strong> Ω
+            </div>
+            <div style="font-size: 0.9em; color: #666; margin-top: 10px;">
+                Data Index: <span id="valIndex">0</span> / <span id="valTotal">0</span>
+            </div>
+        </div>
+
+        <div>
+            <canvas id="myChart" height="400"></canvas>
+        </div>
+    </div>
+
+    <script>
+        // ข้อมูลดิบจากชุดเก่าและชุดใหม่รวมกัน (ลบบรรทัด FAN UPDATE ออกแล้วด้วย script ด้านล่าง หรือลบมือ)
+        const rawDataText = `
+[Temp] T2: 44.176 C (T_Diff: 21.176) Resister = 691.906 
+[Temp] T2: 43.859 C (T_Diff: 20.859) Resister = 700.288 
+[Temp] T2: 43.650 C (T_Diff: 20.650) Resister = 705.882 
+[Temp] T2: 43.442 C (T_Diff: 20.442) Resister = 711.483 
+[Temp] T2: 43.339 C (T_Diff: 20.339) Resister = 714.286 
+[Temp] T2: 42.829 C (T_Diff: 19.829) Resister = 728.321 
+[Temp] T2: 42.629 C (T_Diff: 19.629) Resister = 733.945 
+[Temp] T2: 42.429 C (T_Diff: 19.429) Resister = 739.575 
+[Temp] T2: 42.429 C (T_Diff: 19.429) Resister = 739.575 
+[Temp] T2: 42.035 C (T_Diff: 19.035) Resister = 750.853 
+[Temp] T2: 41.840 C (T_Diff: 18.840) Resister = 756.501 
+[Temp] T2: 41.360 C (T_Diff: 18.360) Resister = 770.647 
+[Temp] T2: 41.170 C (T_Diff: 18.170) Resister = 776.316 
+[Temp] T2: 41.076 C (T_Diff: 18.076) Resister = 779.152 
+[Temp] T2: 40.888 C (T_Diff: 17.888) Resister = 784.830 
+[Temp] T2: 40.610 C (T_Diff: 17.610) Resister = 793.358 
+[Temp] T2: 40.334 C (T_Diff: 17.334) Resister = 801.899 
+[Temp] T2: 40.243 C (T_Diff: 17.243) Resister = 804.749 
+[Temp] T2: 40.152 C (T_Diff: 17.152) Resister = 807.601 
+[Temp] T2: 39.613 C (T_Diff: 16.613) Resister = 824.742 
+[Temp] T2: 39.613 C (T_Diff: 16.613) Resister = 824.742 
+[Temp] T2: 39.436 C (T_Diff: 16.436) Resister = 830.468 
+[Temp] T2: 39.085 C (T_Diff: 16.085) Resister = 841.938 
+[Temp] T2: 39.348 C (T_Diff: 16.348) Resister = 833.333 
+[Temp] T2: 38.569 C (T_Diff: 15.569) Resister = 859.189 
+[Temp] T2: 38.399 C (T_Diff: 15.399) Resister = 864.951 
+[Temp] T2: 37.896 C (T_Diff: 14.896) Resister = 882.275 
+[Temp] T2: 37.484 C (T_Diff: 14.484) Resister = 896.754 
+[Temp] T2: 37.079 C (T_Diff: 14.079) Resister = 911.271 
+[Temp] T2: 36.680 C (T_Diff: 13.680) Resister = 925.827 
+[Temp] T2: 36.210 C (T_Diff: 13.210) Resister = 943.346 
+[Temp] T2: 36.132 C (T_Diff: 13.132) Resister = 946.271 
+[Temp] T2: 35.978 C (T_Diff: 12.978) Resister = 952.126 
+[Temp] T2: 35.370 C (T_Diff: 12.370) Resister = 975.610 
+[Temp] T2: 35.220 C (T_Diff: 12.220) Resister = 981.496 
+[Temp] T2: 34.849 C (T_Diff: 11.849) Resister = 996.241 
+[Temp] T2: 34.775 C (T_Diff: 11.775) Resister = 999.194 
+[Temp] T2: 34.556 C (T_Diff: 11.556) Resister = 1008.065 
+[Temp] T2: 34.484 C (T_Diff: 11.484) Resister = 1011.024 
+[Temp] T2: 33.981 C (T_Diff: 10.981) Resister = 1031.789 
+[Temp] T2: 33.981 C (T_Diff: 10.981) Resister = 1031.789 
+[Temp] T2: 33.839 C (T_Diff: 10.839) Resister = 1037.736 
+[Temp] T2: 33.698 C (T_Diff: 10.698) Resister = 1043.689 
+[Temp] T2: 33.488 C (T_Diff: 10.488) Resister = 1052.632 
+[Temp] T2: 33.210 C (T_Diff: 10.210) Resister = 1064.577 
+[Temp] T2: 33.141 C (T_Diff: 10.141) Resister = 1067.568 
+[Temp] T2: 33.210 C (T_Diff: 10.210) Resister = 1064.577 
+[Temp] T2: 33.073 C (T_Diff: 10.073) Resister = 1070.560 
+[Temp] T2: 32.529 C (T_Diff: 9.529) Resister = 1094.554 
+[Temp] T2: 32.936 C (T_Diff: 9.936) Resister = 1076.549 
+[Temp] T2: 33.141 C (T_Diff: 10.141) Resister = 1067.568 
+[Temp] T2: 32.529 C (T_Diff: 9.529) Resister = 1094.554 
+[Temp] T2: 32.664 C (T_Diff: 9.664) Resister = 1088.546 
+[Temp] T2: 32.597 C (T_Diff: 9.597) Resister = 1091.549 
+[Temp] T2: 32.196 C (T_Diff: 9.196) Resister = 1109.604 
+[Temp] T2: 31.801 C (T_Diff: 8.801) Resister = 1127.718 
+[Temp] T2: 32.130 C (T_Diff: 9.130) Resister = 1112.619 
+[Temp] T2: 31.736 C (T_Diff: 8.736) Resister = 1130.742 
+[Temp] T2: 31.412 C (T_Diff: 8.412) Resister = 1145.890 
+[Temp] T2: 31.348 C (T_Diff: 8.348) Resister = 1148.925 
+[Temp] T2: 31.220 C (T_Diff: 8.220) Resister = 1154.999 
+[Temp] T2: 30.652 C (T_Diff: 7.652) Resister = 1182.414 
+[Temp] T2: 30.715 C (T_Diff: 7.715) Resister = 1179.361 
+[Temp] T2: 30.404 C (T_Diff: 7.404) Resister = 1194.642 
+[Temp] T2: 30.097 C (T_Diff: 7.097) Resister = 1209.964 
+[Temp] T2: 30.036 C (T_Diff: 7.036) Resister = 1213.034 
+[Temp] T2: 29.914 C (T_Diff: 6.914) Resister = 1219.178 
+[Temp] T2: 29.553 C (T_Diff: 6.553) Resister = 1237.651 
+[Temp] T2: 29.494 C (T_Diff: 6.494) Resister = 1240.736 
+[Temp] T2: 29.197 C (T_Diff: 6.197) Resister = 1256.185 
+[Temp] T2: 29.138 C (T_Diff: 6.138) Resister = 1259.280 
+[Temp] T2: 29.197 C (T_Diff: 6.197) Resister = 1256.185 
+[Temp] T2: 28.904 C (T_Diff: 5.904) Resister = 1271.676 
+[Temp] T2: 28.962 C (T_Diff: 5.962) Resister = 1268.575 
+[Temp] T2: 28.672 C (T_Diff: 5.672) Resister = 1284.100 
+[Temp] T2: 28.672 C (T_Diff: 5.672) Resister = 1284.100 
+[Temp] T2: 28.614 C (T_Diff: 5.614) Resister = 1287.211 
+[Temp] T2: 28.557 C (T_Diff: 5.557) Resister = 1290.323 
+[Temp] T2: 28.328 C (T_Diff: 5.328) Resister = 1302.788 
+[Temp] T2: 28.442 C (T_Diff: 5.442) Resister = 1296.552 
+[Temp] T2: 28.158 C (T_Diff: 5.158) Resister = 1312.155 
+[Temp] T2: 28.158 C (T_Diff: 5.158) Resister = 1312.155 
+[Temp] T2: 28.271 C (T_Diff: 5.271) Resister = 1305.908 
+[Temp] T2: 27.988 C (T_Diff: 4.988) Resister = 1321.537 
+[Temp] T2: 28.101 C (T_Diff: 5.101) Resister = 1315.281 
+[Temp] T2: 27.988 C (T_Diff: 4.988) Resister = 1321.537 
+[Temp] T2: 28.045 C (T_Diff: 5.045) Resister = 1318.408 
+[Temp] T2: 27.820 C (T_Diff: 4.820) Resister = 1330.935 
+[Temp] T2: 27.932 C (T_Diff: 4.932) Resister = 1324.668 
+[Temp] T2: 28.045 C (T_Diff: 5.045) Resister = 1318.408 
+[Temp] T2: 27.876 C (T_Diff: 4.876) Resister = 1327.801 
+[Temp] T2: 27.876 C (T_Diff: 4.876) Resister = 1327.801 
+[Temp] T2: 27.598 C (T_Diff: 4.598) Resister = 1343.490 
+[Temp] T2: 27.653 C (T_Diff: 4.653) Resister = 1340.349 
+[Temp] T2: 27.432 C (T_Diff: 4.432) Resister = 1352.925 
+[Temp] T2: 27.487 C (T_Diff: 4.487) Resister = 1349.778 
+[Temp] T2: 27.268 C (T_Diff: 4.268) Resister = 1362.375 
+[Temp] T2: 27.158 C (T_Diff: 4.158) Resister = 1368.684 
+[Temp] T2: 27.050 C (T_Diff: 4.050) Resister = 1375.000 
+[Temp] T2: 27.487 C (T_Diff: 4.487) Resister = 1349.778 
+[Temp] T2: 26.942 C (T_Diff: 3.942) Resister = 1381.323 
+[Temp] T2: 26.888 C (T_Diff: 3.888) Resister = 1384.487 
+[Temp] T2: 26.942 C (T_Diff: 3.942) Resister = 1381.323 
+[Temp] T2: 26.834 C (T_Diff: 3.834) Resister = 1387.653 
+[Temp] T2: 26.620 C (T_Diff: 3.620) Resister = 1400.334 
+[Temp] T2: 26.996 C (T_Diff: 3.996) Resister = 1378.161 
+[Temp] T2: 26.727 C (T_Diff: 3.727) Resister = 1393.990 
+[Temp] T2: 26.620 C (T_Diff: 3.620) Resister = 1400.334 
+[Temp] T2: 26.620 C (T_Diff: 3.620) Resister = 1400.334 
+[Temp] T2: 26.513 C (T_Diff: 3.513) Resister = 1406.685 
+[Temp] T2: 26.407 C (T_Diff: 3.407) Resister = 1413.043 
+[Temp] T2: 26.460 C (T_Diff: 3.460) Resister = 1409.864 
+[Temp] T2: 26.354 C (T_Diff: 3.354) Resister = 1416.225 
+[Temp] T2: 26.144 C (T_Diff: 3.144) Resister = 1428.970 
+[Temp] T2: 26.144 C (T_Diff: 3.144) Resister = 1428.970 
+[Temp] T2: 26.092 C (T_Diff: 3.092) Resister = 1432.161 
+[Temp] T2: 26.040 C (T_Diff: 3.040) Resister = 1435.353 
+[Temp] T2: 25.936 C (T_Diff: 2.936) Resister = 1441.744 
+[Temp] T2: 25.988 C (T_Diff: 2.988) Resister = 1438.547 
+[Temp] T2: 25.988 C (T_Diff: 2.988) Resister = 1438.547 
+[Temp] T2: 25.988 C (T_Diff: 2.988) Resister = 1438.547 
+[Temp] T2: 25.884 C (T_Diff: 2.884) Resister = 1444.941 
+[Temp] T2: 25.884 C (T_Diff: 2.884) Resister = 1444.941 
+[Temp] T2: 25.780 C (T_Diff: 2.780) Resister = 1451.342 
+[Temp] T2: 25.677 C (T_Diff: 2.677) Resister = 1457.750 
+[Temp] T2: 25.729 C (T_Diff: 2.729) Resister = 1454.545 
+[Temp] T2: 25.626 C (T_Diff: 2.626) Resister = 1460.957 
+[Temp] T2: 25.677 C (T_Diff: 2.677) Resister = 1457.750 
+[Temp] T2: 25.626 C (T_Diff: 2.626) Resister = 1460.957 
+[Temp] T2: 25.422 C (T_Diff: 2.422) Resister = 1473.802 
+[Temp] T2: 25.575 C (T_Diff: 2.575) Resister = 1464.166 
+[Temp] T2: 25.422 C (T_Diff: 2.422) Resister = 1473.802 
+[Temp] T2: 25.320 C (T_Diff: 2.320) Resister = 1480.236 
+[Temp] T2: 25.320 C (T_Diff: 2.320) Resister = 1480.236 
+[Temp] T2: 25.320 C (T_Diff: 2.320) Resister = 1480.236 
+[Temp] T2: 25.320 C (T_Diff: 2.320) Resister = 1480.236 
+[Temp] T2: 25.371 C (T_Diff: 2.371) Resister = 1477.018 
+[Temp] T2: 25.320 C (T_Diff: 2.320) Resister = 1480.236 
+[Temp] T2: 25.320 C (T_Diff: 2.320) Resister = 1480.236 
+[Temp] T2: 25.168 C (T_Diff: 2.168) Resister = 1489.899 
+[Temp] T2: 25.269 C (T_Diff: 2.269) Resister = 1483.455 
+[Temp] T2: 25.068 C (T_Diff: 2.068) Resister = 1496.350 
+[Temp] T2: 25.118 C (T_Diff: 2.118) Resister = 1493.124 
+[Temp] T2: 25.118 C (T_Diff: 2.118) Resister = 1493.124 
+[Temp] T2: 25.068 C (T_Diff: 2.068) Resister = 1496.350 
+[Temp] T2: 25.118 C (T_Diff: 2.118) Resister = 1493.124 
+[Temp] T2: 25.068 C (T_Diff: 2.068) Resister = 1496.350 
+[Temp] T2: 24.967 C (T_Diff: 1.967) Resister = 1502.809 
+[Temp] T2: 24.868 C (T_Diff: 1.868) Resister = 1509.275 
+[Temp] T2: 24.967 C (T_Diff: 1.967) Resister = 1502.809 
+[Temp] T2: 24.967 C (T_Diff: 1.967) Resister = 1502.809 
+[Temp] T2: 24.917 C (T_Diff: 1.917) Resister = 1506.041 
+[Temp] T2: 24.768 C (T_Diff: 1.768) Resister = 1515.748 
+[Temp] T2: 24.917 C (T_Diff: 1.917) Resister = 1506.041 
+[Temp] T2: 24.768 C (T_Diff: 1.768) Resister = 1515.748 
+[Temp] T2: 24.818 C (T_Diff: 1.818) Resister = 1512.511 
+[Temp] T2: 24.818 C (T_Diff: 1.818) Resister = 1512.511 
+[Temp] T2: 24.917 C (T_Diff: 1.917) Resister = 1506.041 
+[Temp] T2: 24.620 C (T_Diff: 1.620) Resister = 1525.472 
+[Temp] T2: 24.768 C (T_Diff: 1.768) Resister = 1515.748 
+[Temp] T2: 24.620 C (T_Diff: 1.620) Resister = 1525.472 
+[Temp] T2: 24.768 C (T_Diff: 1.768) Resister = 1515.748 
+[Temp] T2: 24.669 C (T_Diff: 1.669) Resister = 1522.229 
+[Temp] T2: 24.669 C (T_Diff: 1.669) Resister = 1522.229 
+[Temp] T2: 24.669 C (T_Diff: 1.669) Resister = 1522.229 
+[Temp] T2: 24.620 C (T_Diff: 1.620) Resister = 1525.472 
+[Temp] T2: 24.521 C (T_Diff: 1.521) Resister = 1531.963 
+[Temp] T2: 24.423 C (T_Diff: 1.423) Resister = 1538.462 
+[Temp] T2: 24.521 C (T_Diff: 1.521) Resister = 1531.963 
+[Temp] T2: 24.570 C (T_Diff: 1.570) Resister = 1528.716 
+[Temp] T2: 24.521 C (T_Diff: 1.521) Resister = 1531.963 
+[Temp] T2: 24.521 C (T_Diff: 1.521) Resister = 1531.963 
+[Temp] T2: 24.472 C (T_Diff: 1.472) Resister = 1535.211 
+[Temp] T2: 24.423 C (T_Diff: 1.423) Resister = 1538.462 
+[Temp] T2: 24.472 C (T_Diff: 1.472) Resister = 1535.211 
+[Temp] T2: 24.472 C (T_Diff: 1.472) Resister = 1535.211 
+[Temp] T2: 24.374 C (T_Diff: 1.374) Resister = 1541.714 
+[Temp] T2: 24.374 C (T_Diff: 1.374) Resister = 1541.714 
+[Temp] T2: 24.179 C (T_Diff: 1.179) Resister = 1554.740 
+[Temp] T2: 24.325 C (T_Diff: 1.325) Resister = 1544.968 
+[Temp] T2: 24.131 C (T_Diff: 1.131) Resister = 1558.002 
+[Temp] T2: 24.228 C (T_Diff: 1.228) Resister = 1551.481 
+[Temp] T2: 24.131 C (T_Diff: 1.131) Resister = 1558.002 
+[Temp] T2: 24.276 C (T_Diff: 1.276) Resister = 1548.224 
+[Temp] T2: 24.228 C (T_Diff: 1.228) Resister = 1551.481 
+[Temp] T2: 24.228 C (T_Diff: 1.228) Resister = 1551.481 
+[Temp] T2: 24.131 C (T_Diff: 1.131) Resister = 1558.002 
+[Temp] T2: 24.082 C (T_Diff: 1.082) Resister = 1561.265 
+[Temp] T2: 24.034 C (T_Diff: 1.034) Resister = 1564.530 
+[Temp] T2: 23.986 C (T_Diff: 0.986) Resister = 1567.797 
+[Temp] T2: 23.986 C (T_Diff: 0.986) Resister = 1567.797 
+[Temp] T2: 23.842 C (T_Diff: 0.842) Resister = 1577.608 
+[Temp] T2: 24.082 C (T_Diff: 1.082) Resister = 1561.265 
+[Temp] T2: 23.986 C (T_Diff: 0.986) Resister = 1567.797 
+[Temp] T2: 24.034 C (T_Diff: 1.034) Resister = 1564.530 
+[Temp] T2: 23.890 C (T_Diff: 0.890) Resister = 1574.336 
+[Temp] T2: 23.938 C (T_Diff: 0.938) Resister = 1571.065 
+[Temp] T2: 23.986 C (T_Diff: 0.986) Resister = 1567.797 
+[Temp] T2: 24.034 C (T_Diff: 1.034) Resister = 1564.530 
+[Temp] T2: 23.842 C (T_Diff: 0.842) Resister = 1577.608 
+[Temp] T2: 23.794 C (T_Diff: 0.794) Resister = 1580.882 
+[Temp] T2: 23.746 C (T_Diff: 0.746) Resister = 1584.158 
+[Temp] T2: 23.746 C (T_Diff: 0.746) Resister = 1584.158 
+[Temp] T2: 23.698 C (T_Diff: 0.698) Resister = 1587.437 
+[Temp] T2: 23.651 C (T_Diff: 0.651) Resister = 1590.716 
+[Temp] T2: 23.842 C (T_Diff: 0.842) Resister = 1577.608 
+[Temp] T2: 23.794 C (T_Diff: 0.794) Resister = 1580.882 
+[Temp] T2: 23.698 C (T_Diff: 0.698) Resister = 1587.437 
+[Temp] T2: 23.651 C (T_Diff: 0.651) Resister = 1590.716 
+[Temp] T2: 23.746 C (T_Diff: 0.746) Resister = 1584.158 
+[Temp] T2: 23.698 C (T_Diff: 0.698) Resister = 1587.437 
+[Temp] T2: 23.698 C (T_Diff: 0.698) Resister = 1587.437 
+[Temp] T2: 23.698 C (T_Diff: 0.698) Resister = 1587.437 
+[Temp] T2: 23.746 C (T_Diff: 0.746) Resister = 1584.158 
+[Temp] T2: 23.508 C (T_Diff: 0.508) Resister = 1600.567 
+[Temp] T2: 23.556 C (T_Diff: 0.556) Resister = 1597.281 
+[Temp] T2: 23.603 C (T_Diff: 0.603) Resister = 1593.998 
+[Temp] T2: 23.603 C (T_Diff: 0.603) Resister = 1593.998 
+[Temp] T2: 23.651 C (T_Diff: 0.651) Resister = 1590.716 
+[Temp] T2: 23.508 C (T_Diff: 0.508) Resister = 1600.567 
+[Temp] T2: 23.508 C (T_Diff: 0.508) Resister = 1600.567 
+[Temp] T2: 23.414 C (T_Diff: 0.414) Resister = 1607.143 
+[Temp] T2: 23.508 C (T_Diff: 0.508) Resister = 1600.567 
+[Temp] T2: 23.556 C (T_Diff: 0.556) Resister = 1597.281 
+[Temp] T2: 23.367 C (T_Diff: 0.367) Resister = 1610.434 
+[Temp] T2: 23.367 C (T_Diff: 0.367) Resister = 1610.434 
+[Temp] T2: 23.320 C (T_Diff: 0.320) Resister = 1613.727 
+[Temp] T2: 23.367 C (T_Diff: 0.367) Resister = 1610.434 
+[Temp] T2: 23.273 C (T_Diff: 0.273) Resister = 1617.021 
+[Temp] T2: 23.179 C (T_Diff: 0.179) Resister = 1623.616 
+[Temp] T2: 23.273 C (T_Diff: 0.273) Resister = 1617.021 
+[Temp] T2: 23.367 C (T_Diff: 0.367) Resister = 1610.434 
+[Temp] T2: 23.320 C (T_Diff: 0.320) Resister = 1613.727 
+[Temp] T2: 23.273 C (T_Diff: 0.273) Resister = 1617.021 
+[Temp] T2: 23.133 C (T_Diff: 0.133) Resister = 1626.917 
+[Temp] T2: 23.179 C (T_Diff: 0.179) Resister = 1623.616 
+[Temp] T2: 23.226 C (T_Diff: 0.226) Resister = 1620.318 
+[Temp] T2: 23.133 C (T_Diff: 0.133) Resister = 1626.917 
+[Temp] T2: 23.320 C (T_Diff: 0.320) Resister = 1613.727 
+[Temp] T2: 23.273 C (T_Diff: 0.273) Resister = 1617.021 
+[Temp] T2: 23.179 C (T_Diff: 0.179) Resister = 1623.616 
+[Temp] T2: 23.179 C (T_Diff: 0.179) Resister = 1623.616 
+[Temp] T2: 23.226 C (T_Diff: 0.226) Resister = 1620.318 
+[Temp] T2: 23.179 C (T_Diff: 0.179) Resister = 1623.616 
+[Temp] T2: 23.179 C (T_Diff: 0.179) Resister = 1623.616 
+[Temp] T2: 22.993 C (T_Diff: -0.007) Resister = 1636.829 
+[Temp] T2: 22.993 C (T_Diff: -0.007) Resister = 1636.829 
+[Temp] T2: 23.133 C (T_Diff: 0.133) Resister = 1626.917 
+[Temp] T2: 22.993 C (T_Diff: -0.007) Resister = 1636.829 
+[Temp] T2: 22.993 C (T_Diff: -0.007) Resister = 1636.829 
+[Temp] T2: 22.993 C (T_Diff: -0.007) Resister = 1636.829 
+[Temp] T2: 22.947 C (T_Diff: -0.053) Resister = 1640.137 
+[Temp] T2: 22.901 C (T_Diff: -0.099) Resister = 1643.446 
+[Temp] T2: 22.947 C (T_Diff: -0.053) Resister = 1640.137 
+[Temp] T2: 22.993 C (T_Diff: -0.007) Resister = 1636.829 
+[Temp] T2: 22.808 C (T_Diff: -0.192) Resister = 1650.071 
+[Temp] T2: 22.947 C (T_Diff: -0.053) Resister = 1640.137 
+[Temp] T2: 22.993 C (T_Diff: -0.007) Resister = 1636.829 
+[Temp] T2: 22.762 C (T_Diff: -0.238) Resister = 1653.387 
+[Temp] T2: 22.854 C (T_Diff: -0.146) Resister = 1646.758 
+[Temp] T2: 22.854 C (T_Diff: -0.146) Resister = 1646.758 
+[Temp] T2: 22.762 C (T_Diff: -0.238) Resister = 1653.387 
+[Temp] T2: 22.762 C (T_Diff: -0.238) Resister = 1653.387 
+[Temp] T2: 22.901 C (T_Diff: -0.099) Resister = 1643.446 
+[Temp] T2: 22.716 C (T_Diff: -0.284) Resister = 1656.704 
+[Temp] T2: 22.762 C (T_Diff: -0.238) Resister = 1653.387 
+[Temp] T2: 22.808 C (T_Diff: -0.192) Resister = 1650.071 
+[Temp] T2: 22.670 C (T_Diff: -0.330) Resister = 1660.023 
+[Temp] T2: 22.808 C (T_Diff: -0.192) Resister = 1650.071 
+[Temp] T2: 22.762 C (T_Diff: -0.238) Resister = 1653.387 
+[Temp] T2: 22.808 C (T_Diff: -0.192) Resister = 1650.071 
+[Temp] T2: 22.670 C (T_Diff: -0.330) Resister = 1660.023 
+[Temp] T2: 22.579 C (T_Diff: -0.421) Resister = 1666.667 
+[Temp] T2: 22.579 C (T_Diff: -0.421) Resister = 1666.667 
+[Temp] T2: 22.716 C (T_Diff: -0.284) Resister = 1656.704 
+[Temp] T2: 22.533 C (T_Diff: -0.467) Resister = 1669.992 
+[Temp] T2: 22.625 C (T_Diff: -0.375) Resister = 1663.344 
+[Temp] T2: 22.625 C (T_Diff: -0.375) Resister = 1663.344 
+[Temp] T2: 22.625 C (T_Diff: -0.375) Resister = 1663.344 
+[Temp] T2: 22.488 C (T_Diff: -0.512) Resister = 1673.318 
+[Temp] T2: 22.625 C (T_Diff: -0.375) Resister = 1663.344 
+[Temp] T2: 22.579 C (T_Diff: -0.421) Resister = 1666.667 
+[Temp] T2: 22.442 C (T_Diff: -0.558) Resister = 1676.647 
+[Temp] T2: 22.442 C (T_Diff: -0.558) Resister = 1676.647 
+[Temp] T2: 22.533 C (T_Diff: -0.467) Resister = 1669.992 
+[Temp] T2: 22.488 C (T_Diff: -0.512) Resister = 1673.318 
+[Temp] T2: 22.533 C (T_Diff: -0.467) Resister = 1669.992 
+[Temp] T2: 22.397 C (T_Diff: -0.603) Resister = 1679.977 
+[Temp] T2: 22.352 C (T_Diff: -0.648) Resister = 1683.310 
+[Temp] T2: 22.352 C (T_Diff: -0.648) Resister = 1683.310 
+[Temp] T2: 22.306 C (T_Diff: -0.694) Resister = 1686.644 
+[Temp] T2: 22.306 C (T_Diff: -0.694) Resister = 1686.644 
+[Temp] T2: 22.352 C (T_Diff: -0.648) Resister = 1683.310 
+[Temp] T2: 22.261 C (T_Diff: -0.739) Resister = 1689.980 
+[Temp] T2: 22.397 C (T_Diff: -0.603) Resister = 1679.977 
+[Temp] T2: 22.261 C (T_Diff: -0.739) Resister = 1689.980 
+[Temp] T2: 22.397 C (T_Diff: -0.603) Resister = 1679.977 
+[Temp] T2: 22.352 C (T_Diff: -0.648) Resister = 1683.310 
+[Temp] T2: 22.216 C (T_Diff: -0.784) Resister = 1693.318 
+[Temp] T2: 22.352 C (T_Diff: -0.648) Resister = 1683.310 
+[Temp] T2: 22.352 C (T_Diff: -0.648) Resister = 1683.310 
+[Temp] T2: 22.261 C (T_Diff: -0.739) Resister = 1689.980 
+[Temp] T2: 22.171 C (T_Diff: -0.829) Resister = 1696.658 
+[Temp] T2: 22.352 C (T_Diff: -0.648) Resister = 1683.310 
+[Temp] T2: 22.261 C (T_Diff: -0.739) Resister = 1689.980 
+[Temp] T2: 22.171 C (T_Diff: -0.829) Resister = 1696.658 
+[Temp] T2: 22.126 C (T_Diff: -0.874) Resister = 1700.000 
+[Temp] T2: 22.261 C (T_Diff: -0.739) Resister = 1689.980 
+[Temp] T2: 22.126 C (T_Diff: -0.874) Resister = 1700.000 
+[Temp] T2: 22.126 C (T_Diff: -0.874) Resister = 1700.000 
+[Temp] T2: 22.037 C (T_Diff: -0.963) Resister = 1706.690 
+[Temp] T2: 22.171 C (T_Diff: -0.829) Resister = 1696.658 
+[Temp] T2: 22.037 C (T_Diff: -0.963) Resister = 1706.690 
+[Temp] T2: 22.171 C (T_Diff: -0.829) Resister = 1696.658 
+[Temp] T2: 21.992 C (T_Diff: -1.008) Resister = 1710.037 
+[Temp] T2: 22.126 C (T_Diff: -0.874) Resister = 1700.000 
+[Temp] T2: 22.126 C (T_Diff: -0.874) Resister = 1700.000 
+[Temp] T2: 21.992 C (T_Diff: -1.008) Resister = 1710.037 
+[Temp] T2: 21.947 C (T_Diff: -1.053) Resister = 1713.387 
+[Temp] T2: 22.081 C (T_Diff: -0.919) Resister = 1703.344 
+[Temp] T2: 22.037 C (T_Diff: -0.963) Resister = 1706.690 
+[Temp] T2: 21.903 C (T_Diff: -1.097) Resister = 1716.738 
+[Temp] T2: 22.037 C (T_Diff: -0.963) Resister = 1706.690 
+[Temp] T2: 21.903 C (T_Diff: -1.097) Resister = 1716.738 
+[Temp] T2: 21.903 C (T_Diff: -1.097) Resister = 1716.738 
+[Temp] T2: 21.947 C (T_Diff: -1.053) Resister = 1713.387 
+[Temp] T2: 21.992 C (T_Diff: -1.008) Resister = 1710.037 
+[Temp] T2: 21.858 C (T_Diff: -1.142) Resister = 1720.092 
+[Temp] T2: 21.858 C (T_Diff: -1.142) Resister = 1720.092 
+[Temp] T2: 17.445 C (T_Diff: -5.555) Resister = 2093.916 
+[Temp] T2: 17.445 C (T_Diff: -5.555) Resister = 2093.916 
+[Temp] T2: 17.407 C (T_Diff: -5.593) Resister = 2097.489 
+[Temp] T2: 17.521 C (T_Diff: -5.479) Resister = 2086.777 
+[Temp] T2: 17.445 C (T_Diff: -5.555) Resister = 2093.916 
+[Temp] T2: 17.483 C (T_Diff: -5.517) Resister = 2090.345 
+[Temp] T2: 17.407 C (T_Diff: -5.593) Resister = 2097.489 
+[Temp] T2: 17.332 C (T_Diff: -5.668) Resister = 2104.641 
+[Temp] T2: 17.445 C (T_Diff: -5.555) Resister = 2093.916 
+[Temp] T2: 17.407 C (T_Diff: -5.593) Resister = 2097.489 
+[Temp] T2: 17.332 C (T_Diff: -5.668) Resister = 2104.641 
+[Temp] T2: 17.257 C (T_Diff: -5.743) Resister = 2111.801 
+[Temp] T2: 17.220 C (T_Diff: -5.780) Resister = 2115.385 
+[Temp] T2: 16.811 C (T_Diff: -6.189) Resister = 2154.942 
+[Temp] T2: 16.084 C (T_Diff: -6.916) Resister = 2227.531 
+[Temp] T2: 15.305 C (T_Diff: -7.695) Resister = 2308.386 
+[Temp] T2: 14.311 C (T_Diff: -8.689) Resister = 2416.616 
+[Temp] T2: 13.513 C (T_Diff: -9.487) Resister = 2507.636 
+[Temp] T2: 12.451 C (T_Diff: -10.549) Resister = 2634.989 
+[Temp] T2: 11.549 C (T_Diff: -11.451) Resister = 2749.066 
+[Temp] T2: 10.555 C (T_Diff: -12.445) Resister = 2881.409 
+[Temp] T2: 9.708 C (T_Diff: -13.292) Resister = 3000.000 
+[Temp] T2: 8.743 C (T_Diff: -14.257) Resister = 3141.849 
+[Temp] T2: 7.999 C (T_Diff: -15.001) Resister = 3256.717 
+[Temp] T2: 7.217 C (T_Diff: -15.783) Resister = 3382.353 
+[Temp] T2: 6.325 C (T_Diff: -16.675) Resister = 3532.717 
+[Temp] T2: 5.634 C (T_Diff: -17.366) Resister = 3654.552 
+[Temp] T2: 4.931 C (T_Diff: -18.069) Resister = 3783.239 
+[Temp] T2: 4.365 C (T_Diff: -18.635) Resister = 3890.774 
+[Temp] T2: 3.736 C (T_Diff: -19.264) Resister = 4014.374 
+[Temp] T2: 3.095 C (T_Diff: -19.905) Resister = 4145.078 
+[Temp] T2: 2.720 C (T_Diff: -20.280) Resister = 4223.689 
+[Temp] T2: 2.165 C (T_Diff: -20.835) Resister = 4343.257 
+[Temp] T2: 1.686 C (T_Diff: -21.314) Resister = 4449.542 
+[Temp] T2: 1.258 C (T_Diff: -21.742) Resister = 4547.070 
+[Temp] T2: 0.945 C (T_Diff: -22.055) Resister = 4619.779 
+[Temp] T2: 0.636 C (T_Diff: -22.364) Resister = 4693.219 
+[Temp] T2: 0.328 C (T_Diff: -22.672) Resister = 4767.400 
+[Temp] T2: -0.064 C (T_Diff: -23.064) Resister = 4863.884 
+[Temp] T2: -0.258 C (T_Diff: -23.258) Resister = 4912.600 
+[Temp] T2: -0.494 C (T_Diff: -23.494) Resister = 4972.579 
+[Temp] T2: -0.751 C (T_Diff: -23.751) Resister = 5038.561 
+[Temp] T2: -0.984 C (T_Diff: -23.984) Resister = 5099.558 
+[Temp] T2: -1.174 C (T_Diff: -24.174) Resister = 5149.833 
+[Temp] T2: -1.363 C (T_Diff: -24.363) Resister = 5200.446 
+[Temp] T2: -1.531 C (T_Diff: -24.531) Resister = 5245.718 
+[Temp] T2: -1.677 C (T_Diff: -24.677) Resister = 5285.554 
+[Temp] T2: -1.885 C (T_Diff: -24.885) Resister = 5342.825 
+[Temp] T2: -2.009 C (T_Diff: -25.009) Resister = 5377.394 
+[Temp] T2: -2.092 C (T_Diff: -25.092) Resister = 5400.526 
+[Temp] T2: -2.277 C (T_Diff: -25.277) Resister = 5452.831 
+[Temp] T2: -2.400 C (T_Diff: -25.400) Resister = 5487.897 
+[Temp] T2: -2.461 C (T_Diff: -25.461) Resister = 5505.490 
+[Temp] T2: -2.543 C (T_Diff: -25.543) Resister = 5529.011 
+[Temp] T2: -2.543 C (T_Diff: -25.543) Resister = 5529.011 
+[Temp] T2: -2.686 C (T_Diff: -25.686) Resister = 5570.343 
+[Temp] T2: -2.828 C (T_Diff: -25.828) Resister = 5611.895 
+[Temp] T2: -2.747 C (T_Diff: -25.747) Resister = 5588.123 
+[Temp] T2: -2.808 C (T_Diff: -25.808) Resister = 5605.945 
+[Temp] T2: -2.929 C (T_Diff: -25.929) Resister = 5641.711 
+[Temp] T2: -3.051 C (T_Diff: -26.051) Resister = 5677.642 
+[Temp] T2: -3.051 C (T_Diff: -26.051) Resister = 5677.642 
+[Temp] T2: -2.990 C (T_Diff: -25.990) Resister = 5659.656 
+[Temp] T2: -2.869 C (T_Diff: -25.869) Resister = 5623.807 
+[Temp] T2: -2.828 C (T_Diff: -25.828) Resister = 5611.895 
+[Temp] T2: -2.909 C (T_Diff: -25.909) Resister = 5635.738 
+[Temp] T2: -2.869 C (T_Diff: -25.869) Resister = 5623.807 
+[Temp] T2: -2.645 C (T_Diff: -25.645) Resister = 5558.511 
+[Temp] T2: -2.482 C (T_Diff: -25.482) Resister = 5511.364 
+[Temp] T2: -2.174 C (T_Diff: -25.174) Resister = 5423.729 
+[Temp] T2: -1.926 C (T_Diff: -24.926) Resister = 5354.331 
+[Temp] T2: -1.280 C (T_Diff: -24.280) Resister = 5177.910 
+[Temp] T2: -0.623 C (T_Diff: -23.623) Resister = 5005.497 
+[Temp] T2: 0.154 C (T_Diff: -22.846) Resister = 4810.126 
+[Temp] T2: 0.945 C (T_Diff: -22.055) Resister = 4619.779 
+[Temp] T2: 1.822 C (T_Diff: -21.178) Resister = 4419.014 
+[Temp] T2: 2.813 C (T_Diff: -20.187) Resister = 4203.955 
+[Temp] T2: 4.049 C (T_Diff: -18.951) Resister = 3952.300 
+[Temp] T2: 5.131 C (T_Diff: -17.869) Resister = 3746.224 
+[Temp] T2: 6.351 C (T_Diff: -16.649) Resister = 3528.246 
+[Temp] T2: 7.511 C (T_Diff: -15.489) Resister = 3334.419 
+[Temp] T2: 9.052 C (T_Diff: -13.948) Resister = 3095.618 
+[Temp] T2: 10.525 C (T_Diff: -12.475) Resister = 2885.462 
+[Temp] T2: 11.919 C (T_Diff: -11.081) Resister = 2701.613 
+[Temp] T2: 13.220 C (T_Diff: -9.780) Resister = 2542.113 
+[Temp] T2: 14.718 C (T_Diff: -8.282) Resister = 2371.601 
+[Temp] T2: 16.012 C (T_Diff: -6.988) Resister = 2234.837 
+[Temp] T2: 17.257 C (T_Diff: -5.743) Resister = 2111.801 
+[Temp] T2: 18.640 C (T_Diff: -4.360) Resister = 1984.197 
+[Temp] T2: 19.848 C (T_Diff: -3.152) Resister = 1879.896 
+[Temp] T2: 21.071 C (T_Diff: -1.929) Resister = 1780.783 
+[Temp] T2: 22.352 C (T_Diff: -0.648) Resister = 1683.310 
+[Temp] T2: 23.556 C (T_Diff: 0.556) Resister = 1597.281 
+[Temp] T2: 24.669 C (T_Diff: 1.669) Resister = 1522.229 
+[Temp] T2: 25.936 C (T_Diff: 2.936) Resister = 1441.744 
+[Temp] T2: 27.213 C (T_Diff: 4.213) Resister = 1365.529 
+[Temp] T2: 28.614 C (T_Diff: 5.614) Resister = 1287.211 
+[Temp] T2: 29.854 C (T_Diff: 6.854) Resister = 1222.253 
+[Temp] T2: 31.348 C (T_Diff: 8.348) Resister = 1148.925 
+[Temp] T2: 32.529 C (T_Diff: 9.529) Resister = 1094.554 
+[Temp] T2: 33.910 C (T_Diff: 10.910) Resister = 1034.761 
+[Temp] T2: 35.294 C (T_Diff: 12.294) Resister = 978.552 
+[Temp] T2: 36.680 C (T_Diff: 13.680) Resister = 925.827 
+[Temp] T2: 37.979 C (T_Diff: 14.979) Resister = 879.384 
+[Temp] T2: 39.173 C (T_Diff: 16.173) Resister = 839.068 
+[Temp] T2: 40.334 C (T_Diff: 17.334) Resister = 801.899 
+[Temp] T2: 41.744 C (T_Diff: 18.744) Resister = 759.327 
+[Temp] T2: 42.931 C (T_Diff: 19.931) Resister = 725.511 
+[Temp] T2: 44.282 C (T_Diff: 21.282) Resister = 689.115 
+[Temp] T2: 45.151 C (T_Diff: 22.151) Resister = 666.840 
+[Temp] T2: 45.151 C (T_Diff: 22.151) Resister = 666.840 
+[Temp] T2: 46.630 C (T_Diff: 23.630) Resister = 630.841 
+[Temp] T2: 47.343 C (T_Diff: 24.343) Resister = 614.308 
+[Temp] T2: 47.829 C (T_Diff: 24.829) Resister = 603.314 
+[Temp] T2: 48.200 C (T_Diff: 25.200) Resister = 595.084 
+[Temp] T2: 48.830 C (T_Diff: 25.830) Resister = 581.395 
+[Temp] T2: 49.087 C (T_Diff: 26.087) Resister = 575.930 
+[Temp] T2: 49.608 C (T_Diff: 26.608) Resister = 565.015 
+[Temp] T2: 49.740 C (T_Diff: 26.740) Resister = 562.290 
+[Temp] T2: 50.005 C (T_Diff: 27.005) Resister = 556.845 
+[Temp] T2: 48.958 C (T_Diff: 25.958) Resister = 578.662 
+[Temp] T2: 48.450 C (T_Diff: 25.450) Resister = 589.604 
+[Temp] T2: 47.223 C (T_Diff: 24.223) Resister = 617.060 
+[Temp] T2: 45.710 C (T_Diff: 22.710) Resister = 652.966 
+[Temp] T2: 43.236 C (T_Diff: 20.236) Resister = 717.090 
+[Temp] T2: 40.888 C (T_Diff: 17.888) Resister = 784.830 
+[Temp] T2: 38.314 C (T_Diff: 15.314) Resister = 867.834 
+[Temp] T2: 35.824 C (T_Diff: 12.824) Resister = 957.988 
+[Temp] T2: 33.349 C (T_Diff: 10.349) Resister = 1058.601 
+[Temp] T2: 31.030 C (T_Diff: 8.030) Resister = 1164.122 
+[Temp] T2: 29.138 C (T_Diff: 6.138) Resister = 1259.280 
+[Temp] T2: 26.620 C (T_Diff: 3.620) Resister = 1400.334 
+[Temp] T2: 24.669 C (T_Diff: 1.669) Resister = 1522.229 
+[Temp] T2: 22.762 C (T_Diff: -0.238) Resister = 1653.387 
+[Temp] T2: 20.899 C (T_Diff: -2.101) Resister = 1794.355 
+[Temp] T2: 19.439 C (T_Diff: -3.561) Resister = 1914.460 
+[Temp] T2: 17.825 C (T_Diff: -5.175) Resister = 2058.304 
+[Temp] T2: 16.228 C (T_Diff: -6.772) Resister = 2212.944 
+[Temp] T2: 14.821 C (T_Diff: -8.179) Resister = 2360.399 
+[Temp] T2: 13.415 C (T_Diff: -9.585) Resister = 2519.107 
+[Temp] T2: 12.325 C (T_Diff: -10.675) Resister = 2650.602 
+[Temp] T2: 11.154 C (T_Diff: -11.846) Resister = 2800.875 
+[Temp] T2: 10.143 C (T_Diff: -12.857) Resister = 2938.389 
+[Temp] T2: 9.137 C (T_Diff: -13.863) Resister = 3083.067 
+[Temp] T2: 8.080 C (T_Diff: -14.920) Resister = 3243.855 
+[Temp] T2: 7.217 C (T_Diff: -15.783) Resister = 3382.353 
+[Temp] T2: 6.403 C (T_Diff: -16.597) Resister = 3519.314 
+[Temp] T2: 5.684 C (T_Diff: -17.316) Resister = 3645.452 
+[Temp] T2: 4.931 C (T_Diff: -18.069) Resister = 3783.239 
+[Temp] T2: 4.390 C (T_Diff: -18.610) Resister = 3886.063 
+[Temp] T2: 3.712 C (T_Diff: -19.288) Resister = 4019.172 
+[Temp] T2: 3.212 C (T_Diff: -19.788) Resister = 4120.690 
+[Temp] T2: 2.720 C (T_Diff: -20.280) Resister = 4223.689 
+[Temp] T2: 2.234 C (T_Diff: -20.766) Resister = 4328.202 
+[Temp] T2: 1.799 C (T_Diff: -21.201) Resister = 4424.094 
+[Temp] T2: 1.460 C (T_Diff: -21.540) Resister = 4500.708 
+[Temp] T2: 1.079 C (T_Diff: -21.921) Resister = 4588.529 
+[Temp] T2: 0.879 C (T_Diff: -22.121) Resister = 4635.455 
+[Temp] T2: 0.438 C (T_Diff: -22.562) Resister = 4740.821 
+[Temp] T2: 0.154 C (T_Diff: -22.846) Resister = 4810.126 
+[Temp] T2: -0.107 C (T_Diff: -23.107) Resister = 4874.683 
+[Temp] T2: -0.494 C (T_Diff: -23.494) Resister = 4972.579 
+[Temp] T2: -0.644 C (T_Diff: -23.644) Resister = 5010.998 
+[Temp] T2: -0.729 C (T_Diff: -23.729) Resister = 5033.040 
+[Temp] T2: -1.174 C (T_Diff: -24.174) Resister = 5149.833 
+[Temp] T2: -1.195 C (T_Diff: -24.195) Resister = 5155.440 
+[Temp] T2: -1.363 C (T_Diff: -24.363) Resister = 5200.446 
+[Temp] T2: -1.594 C (T_Diff: -24.594) Resister = 5262.765 
+[Temp] T2: -1.739 C (T_Diff: -24.739) Resister = 5302.691 
+[Temp] T2: -1.885 C (T_Diff: -24.885) Resister = 5342.825 
+[Temp] T2: -1.947 C (T_Diff: -24.947) Resister = 5360.090 
+[Temp] T2: -2.030 C (T_Diff: -25.030) Resister = 5383.170 
+[Temp] T2: -2.215 C (T_Diff: -25.215) Resister = 5435.357 
+[Temp] T2: -2.277 C (T_Diff: -25.277) Resister = 5452.831 
+[Temp] T2: -2.400 C (T_Diff: -25.400) Resister = 5487.897 
+[Temp] T2: -2.502 C (T_Diff: -25.502) Resister = 5517.241 
+[Temp] T2: -2.584 C (T_Diff: -25.584) Resister = 5540.798 
+[Temp] T2: -2.625 C (T_Diff: -25.625) Resister = 5552.602 
+[Temp] T2: -2.604 C (T_Diff: -25.604) Resister = 5546.697 
+[Temp] T2: -2.706 C (T_Diff: -25.706) Resister = 5576.265 
+[Temp] T2: -2.665 C (T_Diff: -25.665) Resister = 5564.424 
+[Temp] T2: -2.848 C (T_Diff: -25.848) Resister = 5617.849 
+[Temp] T2: -2.645 C (T_Diff: -25.645) Resister = 5558.511 
+[Temp] T2: -2.441 C (T_Diff: -25.441) Resister = 5499.622 
+[Temp] T2: -2.112 C (T_Diff: -25.112) Resister = 5406.321 
+[Temp] T2: -1.594 C (T_Diff: -24.594) Resister = 5262.765 
+[Temp] T2: -1.005 C (T_Diff: -24.005) Resister = 5105.128 
+[Temp] T2: -0.258 C (T_Diff: -23.258) Resister = 4912.600 
+[Temp] T2: 0.592 C (T_Diff: -22.408) Resister = 4703.771 
+[Temp] T2: 1.460 C (T_Diff: -21.540) Resister = 4500.708 
+[Temp] T2: 2.487 C (T_Diff: -20.513) Resister = 4273.266 
+[Temp] T2: 3.664 C (T_Diff: -19.336) Resister = 4028.777 
+[Temp] T2: 4.832 C (T_Diff: -18.168) Resister = 3801.820 
+[Temp] T2: 6.042 C (T_Diff: -16.958) Resister = 3582.090 
+[Temp] T2: 7.244 C (T_Diff: -15.756) Resister = 3377.981 
+[Temp] T2: 8.576 C (T_Diff: -14.424) Resister = 3167.202 
+[Temp] T2: 9.852 C (T_Diff: -13.148) Resister = 2979.398 
+[Temp] T2: 11.003 C (T_Diff: -11.997) Resister = 2820.914 
+[Temp] T2: 12.200 C (T_Diff: -10.800) Resister = 2666.254 
+[Temp] T2: 13.252 C (T_Diff: -9.748) Resister = 2538.273 
+[Temp] T2: 14.378 C (T_Diff: -8.622) Resister = 2409.091 
+[Temp] T2: 15.305 C (T_Diff: -7.695) Resister = 2308.386 
+[Temp] T2: 16.192 C (T_Diff: -6.808) Resister = 2216.587 
+[Temp] T2: 17.257 C (T_Diff: -5.743) Resister = 2111.801 
+[Temp] T2: 18.094 C (T_Diff: -4.906) Resister = 2033.500 
+[Temp] T2: 18.877 C (T_Diff: -4.123) Resister = 1963.190 
+[Temp] T2: 19.521 C (T_Diff: -3.479) Resister = 1907.531 
+[Temp] T2: 20.180 C (T_Diff: -2.820) Resister = 1852.388 
+[Temp] T2: 21.027 C (T_Diff: -1.973) Resister = 1784.173 
+[Temp] T2: 21.814 C (T_Diff: -1.186) Resister = 1723.447 
+[Temp] T2: 22.762 C (T_Diff: -0.238) Resister = 1653.387 
+[Temp] T2: 23.651 C (T_Diff: 0.651) Resister = 1590.716 
+[Temp] T2: 24.669 C (T_Diff: 1.669) Resister = 1522.229 
+[Temp] T2: 25.524 C (T_Diff: 2.524) Resister = 1467.376 
+[Temp] T2: 26.144 C (T_Diff: 3.144) Resister = 1428.970 
+[Temp] T2: 27.050 C (T_Diff: 4.050) Resister = 1375.000 
+[Temp] T2: 27.876 C (T_Diff: 4.876) Resister = 1327.801 
+[Temp] T2: 28.962 C (T_Diff: 5.962) Resister = 1268.575 
+[Temp] T2: 29.733 C (T_Diff: 6.733) Resister = 1228.407 
+[Temp] T2: 30.715 C (T_Diff: 7.715) Resister = 1179.361 
+[Temp] T2: 31.541 C (T_Diff: 8.541) Resister = 1139.826 
+[Temp] T2: 32.664 C (T_Diff: 9.664) Resister = 1088.546 
+[Temp] T2: 33.488 C (T_Diff: 10.488) Resister = 1052.632 
+[Temp] T2: 34.267 C (T_Diff: 11.267) Resister = 1019.914 
+[Temp] T2: 35.145 C (T_Diff: 12.145) Resister = 984.442 
+[Temp] T2: 35.978 C (T_Diff: 12.978) Resister = 952.126 
+[Temp] T2: 36.601 C (T_Diff: 13.601) Resister = 928.743 
+[Temp] T2: 37.402 C (T_Diff: 14.402) Resister = 899.654 
+[Temp] T2: 38.230 C (T_Diff: 15.230) Resister = 870.719 
+[Temp] T2: 38.654 C (T_Diff: 15.654) Resister = 856.310 
+[Temp] T2: 39.613 C (T_Diff: 16.613) Resister = 824.742 
+[Temp] T2: 39.791 C (T_Diff: 16.791) Resister = 819.023 
+[Temp] T2: 40.610 C (T_Diff: 17.610) Resister = 793.358 
+[Temp] T2: 40.982 C (T_Diff: 17.982) Resister = 781.991 
+[Temp] T2: 41.265 C (T_Diff: 18.265) Resister = 773.481 
+[Temp] T2: 41.840 C (T_Diff: 18.840) Resister = 756.501 
+[Temp] T2: 42.330 C (T_Diff: 19.330) Resister = 742.392 
+[Temp] T2: 42.629 C (T_Diff: 19.629) Resister = 733.945 
+[Temp] T2: 43.236 C (T_Diff: 20.236) Resister = 717.090 
+[Temp] T2: 43.236 C (T_Diff: 20.236) Resister = 717.090 
+[Temp] T2: 43.754 C (T_Diff: 20.754) Resister = 703.084 
+[Temp] T2: 44.282 C (T_Diff: 21.282) Resister = 689.115 
+[Temp] T2: 44.282 C (T_Diff: 21.282) Resister = 689.115 
+[Temp] T2: 44.605 C (T_Diff: 21.605) Resister = 680.751 
+[Temp] T2: 44.822 C (T_Diff: 21.822) Resister = 675.183 
+[Temp] T2: 45.151 C (T_Diff: 22.151) Resister = 666.840 
+[Temp] T2: 43.650 C (T_Diff: 20.650) Resister = 705.882 
+[Temp] T2: 45.485 C (T_Diff: 22.485) Resister = 658.511 
+[Temp] T2: 44.497 C (T_Diff: 21.497) Resister = 683.538 
+[Temp] T2: 43.650 C (T_Diff: 20.650) Resister = 705.882 
+[Temp] T2: 41.840 C (T_Diff: 18.840) Resister = 756.501 
+[Temp] T2: 40.152 C (T_Diff: 17.152) Resister = 807.601 
+[Temp] T2: 37.979 C (T_Diff: 14.979) Resister = 879.384 
+[Temp] T2: 36.055 C (T_Diff: 13.055) Resister = 949.198 
+[Temp] T2: 33.839 C (T_Diff: 10.839) Resister = 1037.736 
+[Temp] T2: 31.671 C (T_Diff: 8.671) Resister = 1133.768 
+[Temp] T2: 29.553 C (T_Diff: 6.553) Resister = 1237.651 
+[Temp] T2: 27.487 C (T_Diff: 4.487) Resister = 1349.778 
+[Temp] T2: 25.575 C (T_Diff: 2.575) Resister = 1464.166 
+[Temp] T2: 23.746 C (T_Diff: 0.746) Resister = 1584.158 
+[Temp] T2: 21.770 C (T_Diff: -1.230) Resister = 1726.804 
+[Temp] T2: 20.347 C (T_Diff: -2.653) Resister = 1838.682 
+[Temp] T2: 18.719 C (T_Diff: -4.281) Resister = 1977.186 
+[Temp] T2: 17.332 C (T_Diff: -5.668) Resister = 2104.641 
+[Temp] T2: 15.798 C (T_Diff: -7.202) Resister = 2256.809 
+[Temp] T2: 14.616 C (T_Diff: -8.384) Resister = 2382.824 
+[Temp] T2: 13.317 C (T_Diff: -9.683) Resister = 2530.600 
+[Temp] T2: 12.200 C (T_Diff: -10.800) Resister = 2666.254 
+[Temp] T2: 11.154 C (T_Diff: -11.846) Resister = 2800.875 
+[Temp] T2: 10.143 C (T_Diff: -12.857) Resister = 2938.389 
+[Temp] T2: 9.279 C (T_Diff: -13.721) Resister = 3062.201 
+[Temp] T2: 8.383 C (T_Diff: -14.617) Resister = 3196.906 
+[Temp] T2: 7.511 C (T_Diff: -15.489) Resister = 3334.419 
+[Temp] T2: 6.768 C (T_Diff: -16.232) Resister = 3457.115 
+[Temp] T2: 6.016 C (T_Diff: -16.984) Resister = 3586.596 
+[Temp] T2: 5.381 C (T_Diff: -17.619) Resister = 3700.234 
+[Temp] T2: 4.807 C (T_Diff: -18.193) Resister = 3806.474 
+[Temp] T2: 4.316 C (T_Diff: -18.684) Resister = 3900.204 
+[Temp] T2: 3.736 C (T_Diff: -19.264) Resister = 4014.374 
+[Temp] T2: 3.236 C (T_Diff: -19.764) Resister = 4115.822 
+[Temp] T2: 2.883 C (T_Diff: -20.117) Resister = 4189.189 
+[Temp] T2: 2.534 C (T_Diff: -20.466) Resister = 4263.323 
+[Temp] T2: 2.165 C (T_Diff: -20.835) Resister = 4343.257 
+[Temp] T2: 1.890 C (T_Diff: -21.110) Resister = 4403.798 
+[Temp] T2: 1.686 C (T_Diff: -21.314) Resister = 4449.542 
+[Temp] T2: 1.550 C (T_Diff: -21.450) Resister = 4480.198 
+[Temp] T2: 1.437 C (T_Diff: -21.563) Resister = 4505.845 
+[Temp] T2: 1.370 C (T_Diff: -21.630) Resister = 4521.276 
+[Temp] T2: 1.370 C (T_Diff: -21.630) Resister = 4521.276 
+[Temp] T2: 1.573 C (T_Diff: -21.427) Resister = 4475.080 
+[Temp] T2: 1.686 C (T_Diff: -21.314) Resister = 4449.542 
+[Temp] T2: 1.868 C (T_Diff: -21.132) Resister = 4408.867 
+[Temp] T2: 2.211 C (T_Diff: -20.789) Resister = 4333.217 
+[Temp] T2: 2.349 C (T_Diff: -20.651) Resister = 4303.179 
+[Temp] T2: 2.627 C (T_Diff: -20.373) Resister = 4243.479 
+[Temp] T2: 2.790 C (T_Diff: -20.210) Resister = 4208.883 
+[Temp] T2: 2.720 C (T_Diff: -20.280) Resister = 4223.689 
+[Temp] T2: 3.071 C (T_Diff: -19.929) Resister = 4149.966 
+[Temp] T2: 3.165 C (T_Diff: -19.835) Resister = 4130.435 
+[Temp] T2: 3.283 C (T_Diff: -19.717) Resister = 4106.098 
+[Temp] T2: 3.189 C (T_Diff: -19.811) Resister = 4125.561 
+[Temp] T2: 3.047 C (T_Diff: -19.953) Resister = 4154.857 
+[Temp] T2: 2.860 C (T_Diff: -20.140) Resister = 4194.107 
+[Temp] T2: 2.813 C (T_Diff: -20.187) Resister = 4203.955 
+[Temp] T2: 2.580 C (T_Diff: -20.420) Resister = 4253.394 
+[Temp] T2: 2.326 C (T_Diff: -20.674) Resister = 4308.176 
+[Temp] T2: 1.982 C (T_Diff: -21.018) Resister = 4383.562 
+[Temp] T2: 1.708 C (T_Diff: -21.292) Resister = 4444.445 
+[Temp] T2: 1.392 C (T_Diff: -21.608) Resister = 4516.129 
+[Temp] T2: 1.101 C (T_Diff: -21.899) Resister = 4583.333 
+[Temp] T2: 0.857 C (T_Diff: -22.143) Resister = 4640.687 
+[Temp] T2: 0.438 C (T_Diff: -22.562) Resister = 4740.821 
+[Temp] T2: 0.350 C (T_Diff: -22.650) Resister = 4762.077 
+[Temp] T2: 0.088 C (T_Diff: -22.912) Resister = 4826.212 
+[Temp] T2: -0.150 C (T_Diff: -23.150) Resister = 4885.497 
+[Temp] T2: -0.258 C (T_Diff: -23.258) Resister = 4912.600 
+[Temp] T2: -0.729 C (T_Diff: -23.729) Resister = 5033.040 
+[Temp] T2: -0.687 C (T_Diff: -23.687) Resister = 5022.011 
+[Temp] T2: -0.729 C (T_Diff: -23.729) Resister = 5033.040 
+[Temp] T2: -0.836 C (T_Diff: -23.836) Resister = 5060.684 
+[Temp] T2: -0.836 C (T_Diff: -23.836) Resister = 5060.684 
+[Temp] T2: -0.836 C (T_Diff: -23.836) Resister = 5060.684 
+[Temp] T2: -0.644 C (T_Diff: -23.644) Resister = 5010.998 
+[Temp] T2: -0.258 C (T_Diff: -23.258) Resister = 4912.600 
+[Temp] T2: 0.110 C (T_Diff: -22.890) Resister = 4820.847 
+[Temp] T2: 0.724 C (T_Diff: -22.276) Resister = 4672.161 
+[Temp] T2: 1.168 C (T_Diff: -21.832) Resister = 4567.770 
+[Temp] T2: 1.708 C (T_Diff: -21.292) Resister = 4444.445 
+[Temp] T2: 2.326 C (T_Diff: -20.674) Resister = 4308.176 
+[Temp] T2: 2.813 C (T_Diff: -20.187) Resister = 4203.955 
+[Temp] T2: 3.212 C (T_Diff: -19.788) Resister = 4120.690 
+[Temp] T2: 3.664 C (T_Diff: -19.336) Resister = 4028.777 
+[Temp] T2: 4.049 C (T_Diff: -18.951) Resister = 3952.300 
+[Temp] T2: 4.463 C (T_Diff: -18.537) Resister = 3871.952 
+[Temp] T2: 4.758 C (T_Diff: -18.242) Resister = 3815.790 
+[Temp] T2: 5.006 C (T_Diff: -17.994) Resister = 3769.335 
+[Temp] T2: 5.432 C (T_Diff: -17.568) Resister = 3691.074 
+`;
+
+        // สกัดข้อมูลอุณหภูมิ (T2) และความต้านทาน (Resister) ด้วย Regex
+        const parsedData = [];
+        const lines = rawDataText.trim().split('\n');
+        
+        // รูปแบบสำหรับดึงค่าตัวเลข
+        const regex = /T2:\s*(-?\d+\.\d+).*?Resister\s*=\s*(\d+\.\d+)/;
+
+        lines.forEach(line => {
+            const match = line.match(regex);
+            if (match) {
+                parsedData.push({
+                    t: parseFloat(match[1]), // อุณหภูมิ
+                    r: parseFloat(match[2])  // ความต้านทาน
+                });
+            }
+        });
+
+        // เพื่อให้กราฟดูง่าย เรียงตามอุณหภูมิจากน้อยไปมาก
+        parsedData.sort((a, b) => a.t - b.t);
+
+        // นำข้อมูลไปแปลงฟอร์แมตเพื่อใส่ใน Chart.js
+        const chartDataPoints = parsedData.map(d => ({ x: d.t, y: d.r }));
+        const totalPoints = parsedData.length;
+
+        // อัปเดต UI 
+        const slider = document.getElementById("dataSlider");
+        slider.max = totalPoints - 1;
+        document.getElementById("valTotal").innerText = totalPoints;
+
+        // สร้างกราฟ
+        const ctx = document.getElementById('myChart').getContext('2d');
+        const myChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                datasets: [
+                    {
+                        label: 'Selected Point',
+                        data: [chartDataPoints[0]],
+                        backgroundColor: 'red',
+                        borderColor: 'red',
+                        pointRadius: 8,
+                        showLine: false,
+                        order: 1
+                    },
+                    {
+                        label: 'T2 vs Resistance Data',
+                        data: chartDataPoints,
+                        backgroundColor: 'rgba(0, 0, 255, 0.1)',
+                        borderColor: 'blue',
+                        borderWidth: 2,
+                        pointRadius: 3,
+                        showLine: true,
+                        order: 2
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                animation: false, // ปิด animation ทำให้สไลเดอร์ไม่กระตุก
+                scales: {
+                    x: {
+                        type: 'linear',
+                        title: { display: true, text: 'Temperature (°C)' }
+                    },
+                    y: {
+                        title: { display: true, text: 'Resistance (Ω)' }
+                    }
+                }
+            }
+        });
+
+        // ฟังก์ชันเมื่อเลื่อน Slider ให้กราฟและตัวเลขขยับตาม
+        slider.addEventListener('input', function(e) {
+            const index = parseInt(e.target.value);
+            const pt = parsedData[index];
+            
+            // อัปเดตตัวเลข
+            document.getElementById("valIndex").innerText = index + 1;
+            document.getElementById("valTemp").innerText = pt.t.toFixed(2);
+            document.getElementById("valRes").innerText = pt.r.toFixed(2);
+
+            // อัปเดตจุดสีแดงในกราฟ
+            myChart.data.datasets[0].data = [{ x: pt.t, y: pt.r }];
+            myChart.update('none'); // อัปเดตทันทีแบบไม่เล่นอนิเมชัน
+        });
+
+        // จำลองการขยับสไลเดอร์ครั้งแรกเพื่อเซ็ตค่าเริ่มต้น
+        slider.dispatchEvent(new Event('input'));
+    </script>
+
+</body>
+</html>
