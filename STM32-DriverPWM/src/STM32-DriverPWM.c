@@ -4,57 +4,52 @@
 #include <stdbool.h>
 #include <math.h>
 
-// Include custom libraries
 #include "Clk\Clk.h"
 #include "Reg\Reg.h"
 #include "SysTicker\SysTicker.h"
 #include "Uart\Uart.h"
 #include "Tm1638\Tm1638.h"
 
-// Global Variables
 float T2 = 0.0f;
 float r_sensor;
 float t_kelvin;
 
-bool Debug = false; // for Debug sim logic only not cal from temp sensor
+bool Debug = false; // true = simulate temperature without NTC sensor
 
 void input_temp_cal(void)
 {
-    ADC1->CR2 |= (0x01 << 30);
-    while (!(ADC1->SR & (0x01 << 1)))
-    {
-    }
+    ADC1->CR2 |= (0x01 << 30); // Start ADC1 conversion
+    while (!(ADC1->SR & (0x01 << 1)));
 
     uint32_t adc_val = ADC1->DR;
-
     float v_adc = 3.3f * ((float)adc_val / 4095.0f);
 
-    // Divider with R10K(Pull-Up)
-    r_sensor = 10000.0f * ((float)v_adc / (3.3f - (float)v_adc));
-
+    // Calculate NTC resistance (10k pull-up) and convert to Celsius (Steinhart-Hart)
+    r_sensor = 10000.0f * (v_adc / (3.3f - v_adc));
     t_kelvin = 1.0f / ((1.0f / (15.0f + 273.15f)) + (1.0f / 3820.0f) * log(r_sensor / 2341.0f));
     T2 = t_kelvin - 273.15f;
 }
 
 int main(void)
 {
-    // Initialize Systems using Libraries
     Clk_24Mhz();
     reg_setting();
     serial_uart_init(9600);
     systick_init();
-    TM1638_Init(); // Initialize TM1638 Display and Buttons
+    TM1638_Init();
 
     TIM2->EGR |= (0x01 << 0);
 
-    // Scaled setpoint (2500 = 25.00 C)
-    int settemp_scaled = 2500;
-    float initial_setpoint = (float)settemp_scaled / 100.0f;
+    int settemp_scaled = 0; // Range: -3000 (-30.0 C) to +2000 (+20.0 C)
+    float initial_setpoint = 0.0f;
+    bool show_t2 = false;   // false = show Settemp, true = show T2
 
-    float temp_step = 0.75; // Debug loop step
+    TM1638_SendData(15, 0x00); // LED 8 initially OFF
+
+    float temp_step = 0.75f;
     if (Debug)
     {
-        T2 = 30.0; // comment this line if use sensor get temp
+        T2 = 30.0f;
     }
 
     uint32_t last_stage_time = 0;
@@ -72,47 +67,53 @@ int main(void)
 
     while (1)
     {
-        // ---------------- 1. TM1638 Button Scan & Display Task (Every 50ms) ----------------
+        // 1. Scan keys and update TM1638 display (every 50ms)
         if ((ms_ticks - last_display_update) >= 50)
         {
             last_display_update = ms_ticks;
 
             uint8_t keys = TM1638_ReadKeys();
+            uint8_t pressed_keys = keys & ~last_keys;
 
-            // Edge detection for S1 (+0.5) and S2 (-0.5)
-            if (keys != last_keys)
+            if (pressed_keys != 0)
             {
-                if (keys & (1 << 0)) { settemp_scaled += 50; } // S1: +0.50 C
-                if (keys & (1 << 1)) { settemp_scaled -= 50; } // S2: -0.50 C
+                if (pressed_keys & (1 << 0)) settemp_scaled += 50; // S1: +0.5 C
+                if (pressed_keys & (1 << 1)) settemp_scaled -= 50; // S2: -0.5 C
+                if (pressed_keys & (1 << 7)) show_t2 = !show_t2;   // S8: Toggle Settemp / T2
 
-                // Clamp boundaries (0.00 C to 99.99 C)
-                if (settemp_scaled > 9999) settemp_scaled = 9999;
-                if (settemp_scaled < 0)    settemp_scaled = 0;
+                if (settemp_scaled > 2000)  settemp_scaled = 2000;
+                if (settemp_scaled < -3000) settemp_scaled = -3000;
 
-                // Update initial_setpoint used in fan control logic
                 initial_setpoint = (float)settemp_scaled / 100.0f;
-                last_keys = keys;
+            }
+            last_keys = keys;
 
-                // sprintf(uart_buf, "[SETPOINT CHANGED] New Target: %.2f C\r\n", initial_setpoint);
-                // uart_print(uart_buf);
+            int display_tenths;
+            if (show_t2)
+            {
+                display_tenths = (int)roundf(T2 * 10.0f);
+                TM1638_SendData(15, 0x01); // LED 8 ON
+            }
+            else
+            {
+                display_tenths = settemp_scaled / 10;
+                TM1638_SendData(15, 0x00); // LED 8 OFF
             }
 
-            // Update TM1638 7-Segment Display (Grid 5, 6, 7, 8)
-            uint8_t tens_val  = (settemp_scaled / 1000) % 10; // Tens digit
-            uint8_t units_val = (settemp_scaled / 100) % 10;  // Units digit
-            uint8_t dec1_val  = (settemp_scaled / 10) % 10;   // 1st decimal place
-            uint8_t dec2_val  = settemp_scaled % 10;          // 2nd decimal place
+            int abs_tenths = (display_tenths < 0) ? -display_tenths : display_tenths;
+            uint8_t tens_val  = (abs_tenths / 100) % 10;
+            uint8_t units_val = (abs_tenths / 10) % 10;
+            uint8_t dec1_val  = abs_tenths % 10;
 
-            // Blank out leading zero in tens digit position
-            uint8_t tens_display = (tens_val == 0) ? 0x00 : font7seg[tens_val];
-
-            TM1638_SendData(8,  tens_display);                     // Grid 5 (0x08): Tens
-            TM1638_SendData(10, font7seg[units_val] | 0x80);       // Grid 6 (0x0A): Units + Decimal Point
-            TM1638_SendData(12, font7seg[dec1_val]);               // Grid 7 (0x0C): 1st decimal digit
-            TM1638_SendData(14, font7seg[dec2_val]);               // Grid 8 (0x0E): 2nd decimal digit
+            // Right-aligned 1-decimal display (Grid 5: minus sign, Grid 6-8: digits)
+            TM1638_SendData(6,  0x00);
+            TM1638_SendData(8,  (display_tenths < 0) ? 0x40 : 0x00);
+            TM1638_SendData(10, (tens_val == 0) ? 0x00 : font7seg[tens_val]);
+            TM1638_SendData(12, font7seg[units_val] | 0x80);
+            TM1638_SendData(14, font7seg[dec1_val]);
         }
 
-        // ---------------- 2. Temperature Sensing Task (Every 1000ms) ----------------
+        // 2. Read temperature and print via UART (every 1000ms)
         if ((ms_ticks - last_temp_update) >= 1000)
         {
             if (!Debug)
@@ -129,47 +130,23 @@ int main(void)
             }
             last_temp_update = ms_ticks;
 
-            sprintf(uart_buf, "SetTempPoint = %.3f | [Temp] T2: %.3f C | (T_Diff: %.3f) | Resister = %.3f \r\n", initial_setpoint, T2, T2 - initial_setpoint, r_sensor);
+            sprintf(uart_buf, "SetTempPoint = %.3f | [Temp] T2: %.3f C | (T_Diff: %.3f) | Resister = %.3f | PWM = %.0f %% \r\n",
+                    initial_setpoint, T2, T2 - initial_setpoint, r_sensor, percent_pwm);
             uart_print(uart_buf);
         }
 
-        // ---------------- 3. PWM Fan Control Logic ----------------
+        // 3. PWM fan control (15s delay before stage change)
         float t_diff = T2 - initial_setpoint;
         int target_pwm = 0;
         int target_rpm = 0;
 
-        if (t_diff > 4.0f)
-        {
-            target_pwm = 2499;
-            target_rpm = 5000;
-        }
-        else if (t_diff >= 3.0f)
-        {
-            target_pwm = 1999;
-            target_rpm = 4000;
-        }
-        else if (t_diff >= 2.0f)
-        {
-            target_pwm = 1499;
-            target_rpm = 3000;
-        }
-        else if (t_diff >= 1.0f)
-        {
-            target_pwm = 999;
-            target_rpm = 2000;
-        }
-        else if (t_diff > -1.0f)
-        {
-            target_pwm = 499;
-            target_rpm = 1000;
-        }
-        else
-        {
-            target_pwm = 0;
-            target_rpm = 0;
-        }
+        if (t_diff > 4.0f)       { target_pwm = 2499; target_rpm = 5000; }
+        else if (t_diff >= 3.0f) { target_pwm = 1999; target_rpm = 4000; }
+        else if (t_diff >= 2.0f) { target_pwm = 1499; target_rpm = 3000; }
+        else if (t_diff >= 1.0f) { target_pwm = 999;  target_rpm = 2000; }
+        else if (t_diff > -1.0f) { target_pwm = 499;  target_rpm = 1000; }
+        else                     { target_pwm = 0;    target_rpm = 0;    }
 
-        // Apply PWM update after 15-second delay stage
         if (target_pwm != current_pwm)
         {
             if ((ms_ticks - last_stage_time) >= 15000)
