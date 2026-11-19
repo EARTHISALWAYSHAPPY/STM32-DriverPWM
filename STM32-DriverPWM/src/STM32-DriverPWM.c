@@ -19,7 +19,8 @@ bool Debug = false; // true = simulate temperature without NTC sensor
 void input_temp_cal(void)
 {
     ADC1->CR2 |= (0x01 << 30); // Start ADC1 conversion
-    while (!(ADC1->SR & (0x01 << 1)));
+    while (!(ADC1->SR & (0x01 << 1)))
+        ;
 
     uint32_t adc_val = ADC1->DR;
     float v_adc = 3.3f * ((float)adc_val / 4095.0f);
@@ -42,7 +43,7 @@ int main(void)
 
     int settemp_scaled = 0; // Range: -3000 (-30.0 C) to +2000 (+20.0 C)
     float initial_setpoint = 0.0f;
-    bool show_t2 = false;   // false = show Settemp, true = show T2
+    bool show_t2 = false; // false = show Settemp, true = show T2
 
     TM1638_SendData(15, 0x00); // LED 8 initially OFF
 
@@ -77,12 +78,17 @@ int main(void)
 
             if (pressed_keys != 0)
             {
-                if (pressed_keys & (1 << 0)) settemp_scaled += 50; // S1: +0.5 C
-                if (pressed_keys & (1 << 1)) settemp_scaled -= 50; // S2: -0.5 C
-                if (pressed_keys & (1 << 7)) show_t2 = !show_t2;   // S8: Toggle Settemp / T2
+                if (pressed_keys & (1 << 0))
+                    settemp_scaled += 50; // S1: +0.5 C
+                if (pressed_keys & (1 << 1))
+                    settemp_scaled -= 50; // S2: -0.5 C
+                if (pressed_keys & (1 << 7))
+                    show_t2 = !show_t2; // S8: Toggle Settemp / T2
 
-                if (settemp_scaled > 2000)  settemp_scaled = 2000;
-                if (settemp_scaled < -3000) settemp_scaled = -3000;
+                if (settemp_scaled > 2000)
+                    settemp_scaled = 2000;
+                if (settemp_scaled < -3000)
+                    settemp_scaled = -3000;
 
                 initial_setpoint = (float)settemp_scaled / 100.0f;
             }
@@ -101,13 +107,13 @@ int main(void)
             }
 
             int abs_tenths = (display_tenths < 0) ? -display_tenths : display_tenths;
-            uint8_t tens_val  = (abs_tenths / 100) % 10;
+            uint8_t tens_val = (abs_tenths / 100) % 10;
             uint8_t units_val = (abs_tenths / 10) % 10;
-            uint8_t dec1_val  = abs_tenths % 10;
+            uint8_t dec1_val = abs_tenths % 10;
 
             // Right-aligned 1-decimal display (Grid 5: minus sign, Grid 6-8: digits)
-            TM1638_SendData(6,  0x00);
-            TM1638_SendData(8,  (display_tenths < 0) ? 0x40 : 0x00);
+            TM1638_SendData(6, 0x00);
+            TM1638_SendData(8, (display_tenths < 0) ? 0x40 : 0x00);
             TM1638_SendData(10, (tens_val == 0) ? 0x00 : font7seg[tens_val]);
             TM1638_SendData(12, font7seg[units_val] | 0x80);
             TM1638_SendData(14, font7seg[dec1_val]);
@@ -140,12 +146,36 @@ int main(void)
         int target_pwm = 0;
         int target_rpm = 0;
 
-        if (t_diff > 4.0f)       { target_pwm = 2499; target_rpm = 5000; }
-        else if (t_diff >= 3.0f) { target_pwm = 1999; target_rpm = 4000; }
-        else if (t_diff >= 2.0f) { target_pwm = 1499; target_rpm = 3000; }
-        else if (t_diff >= 1.0f) { target_pwm = 999;  target_rpm = 2000; }
-        else if (t_diff > -1.0f) { target_pwm = 499;  target_rpm = 1000; }
-        else                     { target_pwm = 0;    target_rpm = 0;    }
+        if (t_diff > 4.0f)
+        {
+            target_pwm = 2499;
+            target_rpm = 5000;
+        }
+        else if (t_diff >= 3.0f)
+        {
+            target_pwm = 1999;
+            target_rpm = 4000;
+        }
+        else if (t_diff >= 2.0f)
+        {
+            target_pwm = 1499;
+            target_rpm = 3000;
+        }
+        else if (t_diff >= 1.0f)
+        {
+            target_pwm = 999;
+            target_rpm = 2000;
+        }
+        else if (t_diff > -1.0f)
+        {
+            target_pwm = 499;
+            target_rpm = 1000;
+        }
+        else
+        {
+            target_pwm = 0;
+            target_rpm = 0;
+        }
 
         if (target_pwm != current_pwm)
         {
